@@ -54,12 +54,23 @@ fi
 
 # --- 3. Application Removal ---
 echo -e "\n${BLUE}[2/4] Removing Speech-TUI Application...${NC}"
+PACKAGE_FOUND=false
 if dpkg -l | grep -q "speech-tui"; then
     echo -e "Uninstalling speech-tui package..."
     sudo apt remove -y speech-tui
+    PACKAGE_FOUND=true
+fi
+
+if [ -f "/usr/bin/speech-tui" ]; then
+    echo -e "Removing stray binary at /usr/bin/speech-tui..."
+    sudo rm "/usr/bin/speech-tui"
+    PACKAGE_FOUND=true
+fi
+
+if [ "$PACKAGE_FOUND" = true ]; then
     echo -e "${GREEN}Application uninstalled.${NC}"
 else
-    echo -e "${YELLOW}Package speech-tui not found, skipping.${NC}"
+    echo -e "${YELLOW}Speech-TUI installation not found, skipping.${NC}"
 fi
 
 # --- 4. Camofox Browser Data Removal ---
