@@ -29,9 +29,8 @@ impl AudioMonitor {
                         max_amp = abs_sample;
                     }
                 }
-                if let Ok(mut amp) = amplitude_clone.lock() {
-                    *amp = max_amp;
-                }
+                let mut amp = amplitude_clone.lock().unwrap();
+                *amp = max_amp;
             },
             |err| {
                 log::error!("Audio stream error: {}", err);
@@ -47,7 +46,7 @@ impl AudioMonitor {
     }
 
     pub fn get_amplitude(&self) -> f32 {
-        *self.amplitude.lock().expect("Amplitude mutex poisoned")
+        *self.amplitude.lock().unwrap()
     }
 }
 

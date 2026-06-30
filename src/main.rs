@@ -30,19 +30,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Create app state
     let app = Arc::new(Mutex::new(App::new()));
-    let browser = BrowserClient::new("http://localhost:8080").expect("Failed to initialize BrowserClient");
+    let browser = BrowserClient::new("http://localhost:8080");
     let audio_data = AudioMonitor::new().ok();
     let (audio, _stream) = if let Some((monitor, stream)) = audio_data {
-        {
-            let mut a = app.lock().expect("State mutex poisoned");
-            a.audio_active = true;
-        }
         (Some(monitor), Some(stream))
     } else {
-        {
-            let mut a = app.lock().expect("State mutex poisoned");
-            a.audio_active = false;
-        }
         (None, None)
     };
 
@@ -58,7 +50,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
             let is_connected = browser_bg.check_connection().await;
             let is_recording = {
-                let a = app_task.lock().expect("State mutex poisoned");
+                let a = app_task.lock().unwrap();
                 a.is_recording
             };
 
@@ -67,25 +59,25 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 tokio::time::sleep(Duration::from_millis(500)).await;
             }
             {
-                let mut a = app_task.lock().expect("State mutex poisoned");
+                let mut a = app_task.lock().unwrap();
                 a.is_connected = is_connected;
             }
 
             if is_connected {
-                if browser_bg.ensure_session().await.is_err() {
-                    let mut a = app_task.lock().expect("State mutex poisoned");
+                if let Err(_) = browser_bg.ensure_session().await {
+                    let mut a = app_task.lock().unwrap();
                     a.status_message = "Failed to start browser session".to_string();
                     continue;
                 }
 
                 let is_recording = {
-                    let a = app_task.lock().expect("State mutex poisoned");
+                    let a = app_task.lock().unwrap();
                     a.is_recording
                 };
 
                 if is_recording {
                     if let Ok(text) = browser_bg.get_text().await {
-                        let mut a = app_task.lock().expect("State mutex poisoned");
+                        let mut a = app_task.lock().unwrap();
                         if !text.is_empty() && text != a.transcript {
                              a.transcript = text;
                         }
@@ -103,78 +95,63 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let mut vu_interval = interval(Duration::from_millis(100));
             loop {
                 vu_interval.tick().await;
-                let mut a = app_vu.lock().expect("State mutex poisoned");
+                let mut a = app_vu.lock().unwrap();
                 a.amplitude = monitor.get_amplitude();
             }
         });
     }
 
     loop {
-        {
-            let app_ui = app.lock().expect("State mutex poisoned");
-            terminal.draw(|f| ui::render(f, &app_ui))?;
-        }
+        let app_ui = app.lock().unwrap();
+        terminal.draw(|f| ui::render(f, &app_ui))?;
+        drop(app_ui);
 
         if event::poll(Duration::from_millis(50))? {
             if let Event::Key(key) = event::read()? {
-                let mut should_break = false;
-                {
-                    let mut a = app.lock().expect("State mutex poisoned");
-                    match key.code {
-                        KeyCode::Char('q') | KeyCode::Char('Q') => {
-                            should_break = true;
+                let mut a = app.lock().unwrap();
+                match key.code {
+                    KeyCode::Char('q') | KeyCode::Char('Q') => break,
+                    KeyCode::Char(' ') => {
+                        a.is_recording = !a.is_recording;
+                        let is_recording = a.is_recording;
+                        if is_recording {
+                            a.status_message = "Dictation started".to_string();
+                        } else {
+                            a.status_message = "Dictation paused".to_string();
                         }
-                        KeyCode::Char(' ') => {
-                            a.is_recording = !a.is_recording;
-                            let is_recording = a.is_recording;
-                            if is_recording {
-                                a.status_message = "Dictation started".to_string();
-                            } else {
-                                a.status_message = "Dictation paused".to_string();
-                            }
 
-                            let browser_task = browser.clone();
-                            tokio::spawn(async move {
-                                if is_recording {
-                                    let _ = browser_task.start_dictation().await;
-                                } else {
-                                    let _ = browser_task.stop_dictation().await;
-                                }
-                            });
-                        }
-                        KeyCode::Char('s') | KeyCode::Char('S') => {
-                            let _ = a.save_transcript();
-                        }
-                        KeyCode::Char('y') | KeyCode::Char('Y') => {
-                            a.copy_to_clipboard();
-                        }
-                        KeyCode::Char('j') | KeyCode::Down => {
-                            if matches!(a.focus, Focus::Sidebar) {
-                                a.next_transcript();
+                        let browser_task = browser.clone();
+                        tokio::spawn(async move {
+                            if is_recording {
+                                let _ = browser_task.start_dictation().await;
+                            } else {
+                                let _ = browser_task.stop_dictation().await;
                             }
-                        }
-                        KeyCode::Char('k') | KeyCode::Up => {
-                            if matches!(a.focus, Focus::Sidebar) {
-                                a.previous_transcript();
-                            }
-                        }
-                        KeyCode::Char('h') | KeyCode::Left => {
-                            a.focus = Focus::Sidebar;
-                        }
-                        KeyCode::Char('l') | KeyCode::Right => {
-                            a.focus = Focus::Main;
-                        }
-                        _ => {}
+                        });
                     }
-                }
-                if should_break {
-                    // Graceful shutdown: try to stop dictation
-                    let browser_shutdown = browser.clone();
-                    tokio::spawn(async move {
-                        let _ = browser_shutdown.stop_dictation().await;
-                    });
-                    tokio::time::sleep(Duration::from_millis(200)).await;
-                    break;
+                    KeyCode::Char('s') | KeyCode::Char('S') => {
+                        let _ = a.save_transcript();
+                    }
+                    KeyCode::Char('y') | KeyCode::Char('Y') => {
+                        a.copy_to_clipboard();
+                    }
+                    KeyCode::Char('j') | KeyCode::Down => {
+                        if matches!(a.focus, Focus::Sidebar) {
+                            a.next_transcript();
+                        }
+                    }
+                    KeyCode::Char('k') | KeyCode::Up => {
+                        if matches!(a.focus, Focus::Sidebar) {
+                            a.previous_transcript();
+                        }
+                    }
+                    KeyCode::Char('h') | KeyCode::Left => {
+                        a.focus = Focus::Sidebar;
+                    }
+                    KeyCode::Char('l') | KeyCode::Right => {
+                        a.focus = Focus::Main;
+                    }
+                    _ => {}
                 }
             }
         }
