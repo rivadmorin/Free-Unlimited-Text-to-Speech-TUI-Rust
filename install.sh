@@ -117,9 +117,24 @@ echo -e "\n${BLUE}[4/6] Building and Installing Speech-TUI...${NC}"
 cargo deb
 if [ $? -eq 0 ]; then
     # Pick the most recently created .deb package
-    DEB_FILE=$(ls -t target/debian/speech-tui_*.deb | head -n 1)
+    DEB_RELATIVE_PATH=$(ls -t target/debian/speech-tui_*.deb | head -n 1)
+    if [ -z "$DEB_RELATIVE_PATH" ]; then
+        echo -e "${RED}Error: .deb file not found in target/debian/.${NC}"
+        exit 1
+    fi
+    DEB_FILE=$(realpath "$DEB_RELATIVE_PATH")
     echo -e "${GREEN}Build successful. Installing $DEB_FILE...${NC}"
     sudo apt install -y "$DEB_FILE"
+
+    # Verify binary exists
+    if ! command -v speech-tui &> /dev/null; then
+        echo -e "${YELLOW}Warning: speech-tui binary not found in PATH after installation.${NC}"
+        echo -e "Attempting to locate it in /usr/bin/speech-tui..."
+        if [ ! -f "/usr/bin/speech-tui" ]; then
+            echo -e "${RED}Error: speech-tui installation failed. Binary missing from /usr/bin/.${NC}"
+            exit 1
+        fi
+    fi
 else
     echo -e "${RED}Failed to build .deb package.${NC}"
     exit 1
