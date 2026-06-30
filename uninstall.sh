@@ -38,11 +38,14 @@ fi
 # --- 2. Service Deactivation ---
 echo -e "\n${BLUE}[1/4] Deactivating Systemd Service...${NC}"
 SERVICE_NAME="camofox.service"
-if systemctl list-unit-files | grep -q "$SERVICE_NAME"; then
+SERVICE_FILE="/etc/systemd/system/$SERVICE_NAME"
+if [ -f "$SERVICE_FILE" ] || systemctl list-unit-files | grep -q "$SERVICE_NAME"; then
     echo -e "Stopping and disabling $SERVICE_NAME..."
-    sudo systemctl stop "$SERVICE_NAME"
-    sudo systemctl disable "$SERVICE_NAME"
-    sudo rm "/etc/systemd/system/$SERVICE_NAME"
+    sudo systemctl stop "$SERVICE_NAME" 2>/dev/null || true
+    sudo systemctl disable "$SERVICE_NAME" 2>/dev/null || true
+    if [ -f "$SERVICE_FILE" ]; then
+        sudo rm "$SERVICE_FILE"
+    fi
     sudo systemctl daemon-reload
     echo -e "${GREEN}Service removed.${NC}"
 else
