@@ -11,20 +11,20 @@ pub struct BrowserClient {
 }
 
 impl BrowserClient {
-    pub fn new(base_url: &str) -> Result<Self> {
-        Ok(Self {
+    pub fn new(base_url: &str) -> Self {
+        Self {
             client: Client::builder()
                 .timeout(Duration::from_secs(10))
                 .build()
-                .context("Failed to build HTTP client")?,
+                .unwrap(),
             base_url: base_url.to_string(),
             tab_id: Arc::new(Mutex::new(None)),
-        })
+        }
     }
 
     pub async fn ensure_session(&self) -> Result<()> {
         {
-            let tid = self.tab_id.lock().expect("Tab ID mutex poisoned");
+            let tid = self.tab_id.lock().unwrap();
             if tid.is_some() {
                 return Ok(());
             }
@@ -41,12 +41,9 @@ impl BrowserClient {
             .json::<serde_json::Value>()
             .await?;
 
-        let tab_id = res.get("tabId")
-            .and_then(|v| v.as_str())
-            .context("Failed to get tabId from browser response")?
-            .to_string();
+        let tab_id = res["tabId"].as_str().context("Failed to get tabId")?.to_string();
         {
-            let mut tid = self.tab_id.lock().expect("Tab ID mutex poisoned");
+            let mut tid = self.tab_id.lock().unwrap();
             *tid = Some(tab_id);
         }
 
@@ -58,7 +55,7 @@ impl BrowserClient {
 
     pub async fn start_dictation(&self) -> Result<()> {
         let tab_id = {
-            let tab_id_guard = self.tab_id.lock().expect("Tab ID mutex poisoned");
+            let tab_id_guard = self.tab_id.lock().unwrap();
             tab_id_guard.as_ref().context("No active tab")?.clone()
         };
 
@@ -79,7 +76,7 @@ impl BrowserClient {
 
     pub async fn stop_dictation(&self) -> Result<()> {
         let tab_id = {
-            let tab_id_guard = self.tab_id.lock().expect("Tab ID mutex poisoned");
+            let tab_id_guard = self.tab_id.lock().unwrap();
             tab_id_guard.as_ref().context("No active tab")?.clone()
         };
 
@@ -96,7 +93,7 @@ impl BrowserClient {
 
     pub async fn get_text(&self) -> Result<String> {
         let tab_id = {
-            let tab_id_guard = self.tab_id.lock().expect("Tab ID mutex poisoned");
+            let tab_id_guard = self.tab_id.lock().unwrap();
             tab_id_guard.as_ref().context("No active tab")?.clone()
         };
 
@@ -110,7 +107,14 @@ impl BrowserClient {
         self.dismiss_popups(&tab_id, &res).await?;
 
         // Extract text from the snapshot.
-        if let Some(snapshot) = res.get("snapshot").and_then(|v| v.as_str()) {
+        // speechnotes.co editor is typically identified in the accessibility tree.
+        // We look for a generic container with "editor" or a large amount of text.
+        // Based on camofox snapshots, we look for elements with role 'generic' or 'textbox'
+
+        if let Some(snapshot) = res["snapshot"].as_str() {
+             // In a real scenario, we'd parse the snapshot string (which is often a tree)
+             // For this implementation, we'll use a heuristic to find the main text area.
+             // Usually, it's the largest text block.
              return Ok(self.parse_dictated_text(snapshot));
         }
 
@@ -118,7 +122,7 @@ impl BrowserClient {
     }
 
     async fn dismiss_popups(&self, tab_id: &str, snapshot_res: &serde_json::Value) -> Result<()> {
-        let snapshot = snapshot_res.get("snapshot").and_then(|v| v.as_str()).unwrap_or("");
+        let snapshot = snapshot_res["snapshot"].as_str().unwrap_or("");
 
         // Common popup close button patterns on speechnotes.co
         let popup_markers = ["Close", "Dismiss", "Maybe later", "Don't show again", "×"];
