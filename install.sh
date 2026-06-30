@@ -55,8 +55,8 @@ DEPENDENCIES=(
 
 echo -e "Required packages: ${DEPENDENCIES[*]}"
 if confirm "Do you want to install these dependencies via apt? [y/N]"; then
-    sudo apt update
-    sudo apt install -y "${DEPENDENCIES[@]}"
+    sudo apt update || { echo -e "${RED}apt update failed.${NC}"; exit 1; }
+    sudo apt install -y "${DEPENDENCIES[@]}" || { echo -e "${RED}Failed to install dependencies.${NC}"; exit 1; }
     echo -e "${GREEN}Dependencies installed successfully.${NC}"
 else
     echo -e "${YELLOW}Skipping dependency installation. Ensure they are present manually.${NC}"
@@ -81,7 +81,7 @@ fi
 # cargo-deb check
 if ! cargo deb --version &> /dev/null; then
     echo -e "${BLUE}Installing cargo-deb...${NC}"
-    cargo install cargo-deb
+    cargo install cargo-deb || { echo -e "${RED}Failed to install cargo-deb.${NC}"; exit 1; }
     echo -e "${GREEN}cargo-deb installed.${NC}"
 fi
 
@@ -114,7 +114,7 @@ fi
 
 # --- 5. Rust TUI Build & Packaging ---
 echo -e "\n${BLUE}[4/6] Building and Installing Speech-TUI...${NC}"
-cargo deb
+cargo deb || { echo -e "${RED}cargo deb failed.${NC}"; exit 1; }
 if [ $? -eq 0 ]; then
     # Pick the most recently created .deb package
     DEB_FILE=$(ls -t target/debian/speech-tui_*.deb | head -n 1)
