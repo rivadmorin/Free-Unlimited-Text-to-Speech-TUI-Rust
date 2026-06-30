@@ -118,8 +118,12 @@ cargo deb || { echo -e "${RED}cargo deb failed.${NC}"; exit 1; }
 if [ $? -eq 0 ]; then
     # Pick the most recently created .deb package
     DEB_FILE=$(ls -t target/debian/speech-tui_*.deb | head -n 1)
+    if [ -z "$DEB_FILE" ]; then
+        echo -e "${RED}Error: .deb file not found in target/debian/.${NC}"
+        exit 1
+    fi
     echo -e "${GREEN}Build successful. Installing $DEB_FILE...${NC}"
-    sudo apt install -y "$DEB_FILE"
+    sudo apt install -y "./$DEB_FILE"
 else
     echo -e "${RED}Failed to build .deb package.${NC}"
     exit 1
